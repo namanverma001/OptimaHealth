@@ -13,8 +13,8 @@ import {
 import axios from "axios";
 
 // Replace with your Gemini API provider's credentials
-const GEMINI_API_KEY = "AIzaSyAhEEMH1-OtYB8eYkvM4WlKskUjFKvtJhk"; // Replace with your actual Gemini API key
-const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"; // Replace with the correct endpoint
+const GEMINI_API_KEY = "YOUR API KEY"; // Replace with your actual Gemini API key
+const GEMINI_API_URL = "URL ENDPOINT"; // Replace with the correct endpoint
 
 export default function ChatbotScreen() {
     const [messages, setMessages] = useState<{ text: string; sender: "user" | "bot" }[]>([

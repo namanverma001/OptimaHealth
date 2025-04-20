@@ -64,7 +64,7 @@ const QUICK_ACTIONS = [
   },
   {
     icon: "chatbubble-ellipses-outline" as const,
-    label: "Chatbot",
+    label: "MedAssist",
     route: "/chatbot" as const,
     color: "#673AB7",
     gradient: ["#9C27B0", "#673AB7"] as [string, string],
@@ -144,6 +144,7 @@ export default function HomeScreen() {
   const [todaysMedications, setTodaysMedications] = useState<Medication[]>([]);
   const [completedDoses, setCompletedDoses] = useState(0);
   const [doseHistory, setDoseHistory] = useState<DoseHistory[]>([]);
+  const [progress, setProgress] = useState(0);
 
   const loadMedications = useCallback(async () => {
     try {
@@ -177,9 +178,32 @@ export default function HomeScreen() {
 
       setTodaysMedications(todayMeds);
 
+      // Calculate total expected doses for today based on frequency
+      const totalExpectedDoses = todayMeds.reduce((total, med) => {
+        switch (med.frequency) {
+          case "Once daily":
+            return total + 1;
+          case "Twice daily":
+            return total + 2;
+          case "Three times daily":
+            return total + 3;
+          case "Four times daily":
+            return total + 4;
+          case "As needed":
+            return total + 0;
+          default:
+            return total + med.times.length;
+        }
+      }, 0);
+
       // Calculate completed doses
       const completed = todaysDoses.filter((dose) => dose.taken).length;
       setCompletedDoses(completed);
+
+      // Update progress calculation based on actual total doses
+      const progress = totalExpectedDoses > 0 ? completed / totalExpectedDoses : 0;
+      setProgress(progress);
+
     } catch (error) {
       console.error("Error loading medications:", error);
     }
@@ -250,11 +274,6 @@ export default function HomeScreen() {
     );
   };
 
-  const progress =
-    todaysMedications.length > 0
-      ? completedDoses / (todaysMedications.length * 2)
-      : 0;
-
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       <LinearGradient colors={["#1a8e2d", "#146922"]} style={styles.header}>
@@ -279,7 +298,22 @@ export default function HomeScreen() {
           </View>
           <CircularProgress
             progress={progress}
-            totalDoses={todaysMedications.length * 2}
+            totalDoses={todaysMedications.reduce((total, med) => {
+              switch (med.frequency) {
+                case "Once daily":
+                  return total + 1;
+                case "Twice daily":
+                  return total + 2;
+                case "Three times daily":
+                  return total + 3;
+                case "Four times daily":
+                  return total + 4;
+                case "As needed":
+                  return total + 0;
+                default:
+                  return total + med.times.length;
+              }
+            }, 0)}
             completedDoses={completedDoses}
           />
         </View>

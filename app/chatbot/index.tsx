@@ -8,17 +8,30 @@ import {
     ScrollView,
     KeyboardAvoidingView,
     Platform,
+    ActivityIndicator
 } from "react-native";
 import axios from "axios";
 
-// Replace with your Llama API provider's credentials
-const LLAMA_API_KEY = "ba3ab8ce-8d02-453b-9a2c-278d2e5ec130"; // Replace with your actual API key
-const LLAMA_API_URL = "https://api.replicate.com/v1/predictions"; // Replace with actual endpoint (e.g., xAI Grok API, Replicate, etc.)
+// Replace with your Gemini API provider's credentials
+const GEMINI_API_KEY = "AIzaSyAhEEMH1-OtYB8eYkvM4WlKskUjFKvtJhk"; // Replace with your actual Gemini API key
+const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"; // Replace with the correct endpoint
 
 export default function ChatbotScreen() {
-    const [messages, setMessages] = useState<{ text: string; sender: "user" | "bot" }[]>([]);
+    const [messages, setMessages] = useState<{ text: string; sender: "user" | "bot" }[]>([
+        {
+            text: "Hello! I'm MedAssist, your health assistant. I can provide general medical information and guidance. What health question can I help you with today?",
+            sender: "bot"
+        }
+    ]);
     const [input, setInput] = useState("");
+    const [isLoading, setIsLoading] = useState(false);
     const scrollViewRef = useRef<ScrollView>(null);
+    const [conversationHistory, setConversationHistory] = useState([
+        {
+            role: "model",
+            parts: [{ text: "Hello! I'm MedAssist, your health assistant. I can provide general medical information and guidance. What health question can I help you with today?" }]
+        }
+    ]);
 
     const sendMessage = async () => {
         if (!input.trim()) return;
@@ -26,31 +39,71 @@ export default function ChatbotScreen() {
         const userMessage: { text: string; sender: "user" | "bot" } = { text: input, sender: "user" };
         setMessages((prev) => [...prev, userMessage]);
         setInput("");
+        setIsLoading(true);
+
+        // Update conversation history with user message
+        const updatedHistory = [
+            ...conversationHistory,
+            {
+                role: "user",
+                parts: [{ text: input }]
+            }
+        ];
+
+        setConversationHistory(updatedHistory);
 
         try {
+            // Construct the prompt with instructions for the medical focus
+            const medicalPreamble = `You are MedAssist, a medical AI assistant that provides helpful, accurate, and ethical medical information. You clearly state you're not a replacement for professional medical advice. You ask clarifying questions if symptoms or concerns aren't clear. You focus exclusively on health and medical topics and politely redirect non-medical questions to health topics instead. You respond in a compassionate manner appropriate for medical discussions. Keep responses concise.
+
+Now, respond to this medical query: ${input}`;
+
             const response = await axios.post(
-                LLAMA_API_URL,
+                `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`,
                 {
-                    version: "12345abcde", // Replace with the correct version ID
-                    input: {
-                        prompt: input
+                    contents: [
+                        {
+                            role: "user",
+                            parts: [{ text: medicalPreamble }]
+                        }
+                    ],
+                    generationConfig: {
+                        temperature: 0.2,
+                        topP: 0.8,
+                        topK: 40,
+                        maxOutputTokens: 800
                     }
                 },
                 {
                     headers: {
                         "Content-Type": "application/json",
-                        Authorization: `Token ${LLAMA_API_KEY}`
-                    }
+                    },
                 }
             );
 
-            const botReply = response.data?.output || "Sorry, I couldn't generate a reply.";
+            const botReply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text || "I'm sorry, I couldn't process your medical question. Could you rephrase it?";
+
+            // For display, we keep the normal conversation
             const botMessage: { text: string; sender: "user" | "bot" } = { text: botReply, sender: "bot" };
             setMessages((prev) => [...prev, botMessage]);
+
+            // For history, we add just the model's response without our preamble instructions
+            setConversationHistory([
+                ...updatedHistory,
+                {
+                    role: "model",
+                    parts: [{ text: botReply }]
+                }
+            ]);
         } catch (error) {
-            console.error("Error communicating with Llama API:", (error as any).response?.data || (error as any).message);
-            const errorMessage: { text: string; sender: "user" | "bot" } = { text: "Something went wrong. Please try again later.", sender: "bot" };
+            console.error("Error communicating with Gemini API:", error.response?.data || error.message);
+            const errorMessage: { text: string; sender: "user" | "bot" } = {
+                text: "I'm having trouble connecting to my medical database. Please try again with your health question.",
+                sender: "bot"
+            };
             setMessages((prev) => [...prev, errorMessage]);
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -65,7 +118,8 @@ export default function ChatbotScreen() {
         >
             {/* Header */}
             <View style={styles.header}>
-                <Text style={styles.headerText}>OptimaHealth</Text>
+                <Text style={styles.headerText}>MedAssist</Text>
+                <Text style={styles.subHeaderText}>Your Health Assistant</Text>
             </View>
 
             {/* Chat messages */}
@@ -82,37 +136,56 @@ export default function ChatbotScreen() {
                             message.sender === "user" ? styles.userMessage : styles.botMessage,
                         ]}
                     >
-                        <Text style={styles.messageText}>{message.text}</Text>
+                        <Text style={[
+                            styles.messageText,
+                            message.sender === "user" ? styles.userMessageText : styles.botMessageText
+                        ]}>
+                            {message.text}
+                        </Text>
                     </View>
                 ))}
+                {isLoading && (
+                    <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="small" color="#4CAF50" />
+                        <Text style={styles.loadingText}>Consulting medical knowledge...</Text>
+                    </View>
+                )}
             </ScrollView>
 
             {/* Input area */}
             <View style={styles.inputContainer}>
                 <TextInput
                     style={styles.input}
-                    placeholder="Ask me anything about your health..."
+                    placeholder="Ask me about health concerns..."
                     placeholderTextColor="#999"
                     value={input}
                     onChangeText={setInput}
+                    multiline
+                    maxLength={500}
                 />
-                <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
+                <TouchableOpacity style={styles.sendButton} onPress={sendMessage} disabled={isLoading}>
                     <Text style={styles.sendButtonText}>➤</Text>
                 </TouchableOpacity>
+            </View>
+
+            {/* Disclaimer */}
+            <View style={styles.disclaimerContainer}>
+                <Text style={styles.disclaimerText}>
+                    This app provides general information only and is not a substitute for professional medical advice.
+                </Text>
             </View>
         </KeyboardAvoidingView>
     );
 }
 
-// Styles remain unchanged
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#e9f5f2",
+        backgroundColor: "#f5f9fc",
     },
     header: {
         paddingTop: 50,
-        paddingBottom: 20,
+        paddingBottom: 15,
         backgroundColor: "#4CAF50",
         alignItems: "center",
         justifyContent: "center",
@@ -126,19 +199,24 @@ const styles = StyleSheet.create({
     },
     headerText: {
         color: "#fff",
-        fontSize: 22,
+        fontSize: 24,
         fontWeight: "bold",
         letterSpacing: 1,
     },
+    subHeaderText: {
+        color: "#e0f2e0",
+        fontSize: 14,
+        marginTop: 2,
+    },
     chatContainer: {
         padding: 16,
-        paddingBottom: 80,
+        paddingBottom: 100, // Extra padding at bottom to account for input and disclaimer
     },
     message: {
         padding: 12,
-        borderRadius: 16,
+        borderRadius: 18,
         marginVertical: 6,
-        maxWidth: "80%",
+        maxWidth: "85%",
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.1,
@@ -153,11 +231,31 @@ const styles = StyleSheet.create({
         alignSelf: "flex-start",
         backgroundColor: "#ffffff",
         borderWidth: 1,
-        borderColor: "#d4f1e3",
+        borderColor: "#e0f2e0",
     },
     messageText: {
-        color: "#333",
         fontSize: 16,
+        lineHeight: 22,
+    },
+    userMessageText: {
+        color: "#ffffff",
+    },
+    botMessageText: {
+        color: "#333333",
+    },
+    loadingContainer: {
+        flexDirection: "row",
+        alignItems: "center",
+        alignSelf: "flex-start",
+        marginVertical: 8,
+        backgroundColor: "#f0f0f0",
+        padding: 8,
+        borderRadius: 16,
+    },
+    loadingText: {
+        marginLeft: 8,
+        color: "#666",
+        fontSize: 14,
     },
     inputContainer: {
         flexDirection: "row",
@@ -165,28 +263,45 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingVertical: 10,
         borderTopWidth: 1,
-        borderColor: "#ccc",
+        borderColor: "#e0e0e0",
         backgroundColor: "#fff",
         position: "absolute",
-        bottom: 0,
+        bottom: 30, // Adjusted to make room for disclaimer
         width: "100%",
     },
     input: {
         flex: 1,
-        backgroundColor: "#f0f0f0",
+        backgroundColor: "#f5f5f5",
         borderRadius: 25,
-        paddingVertical: 10,
+        paddingVertical: 12,
         paddingHorizontal: 18,
         fontSize: 16,
+        maxHeight: 100, // Limit height for multiline
     },
     sendButton: {
         marginLeft: 10,
         backgroundColor: "#4CAF50",
         borderRadius: 25,
-        padding: 12,
+        padding: 14,
+        alignItems: "center",
+        justifyContent: "center",
     },
     sendButtonText: {
         color: "#fff",
-        fontSize: 18,
+        fontSize: 16,
     },
+    disclaimerContainer: {
+        padding: 8,
+        backgroundColor: "#f0f7f0",
+        position: "absolute",
+        bottom: 0,
+        width: "100%",
+        borderTopWidth: 1,
+        borderColor: "#e0e0e0",
+    },
+    disclaimerText: {
+        fontSize: 10,
+        color: "#666",
+        textAlign: "center",
+    }
 });

@@ -65,7 +65,7 @@ export default function AuthScreen() {
   };
 
   return (
-    <LinearGradient colors={["#4CAF50", "#2E7D32"]} style={styles.container}>
+    <LinearGradient colors={["#2196F3", "#1976D2"]} style={styles.container}>
       <View style={styles.content}>
         <View style={styles.iconContainer}>
           <Ionicons name="medical" size={80} color="white" />
@@ -176,7 +176,7 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   button: {
-    backgroundColor: "#4CAF50",
+    backgroundColor: "#1976D2",
     paddingVertical: 15,
     paddingHorizontal: 30,
     borderRadius: 12,

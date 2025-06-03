@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
+  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -114,45 +115,77 @@ export default function CalendarScreen() {
       (dose) => new Date(dose.timestamp).toDateString() === dateStr
     );
 
-    return medications.map((medication) => {
-      const taken = dayDoses.some(
-        (dose) => dose.medicationId === medication.id && dose.taken
-      );
+    return medications.flatMap((medication) => {
+      // For each dose time, create a separate card
+      return medication.times.map((time, index) => {
+        // Check if this specific dose is taken
+        const doseIsTaken = dayDoses.some(
+          (dose) =>
+            dose.medicationId === medication.id &&
+            dose.taken &&
+            dose.scheduledTime === time
+        );
 
-      return (
-        <View key={medication.id} style={styles.medicationCard}>
-          <View
-            style={[
-              styles.medicationColor,
-              { backgroundColor: medication.color },
-            ]}
-          />
-          <View style={styles.medicationInfo}>
-            <Text style={styles.medicationName}>{medication.name}</Text>
-            <Text style={styles.medicationDosage}>{medication.dosage}</Text>
-            <Text style={styles.medicationTime}>{medication.times[0]}</Text>
-          </View>
-          {taken ? (
-            <View style={styles.takenBadge}>
-              <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
-              <Text style={styles.takenText}>Taken</Text>
-            </View>
-          ) : (
-            <TouchableOpacity
+        return (
+          <View key={`${medication.id}-${time}`} style={styles.medicationCard}>
+            <View
               style={[
-                styles.takeDoseButton,
+                styles.medicationColor,
                 { backgroundColor: medication.color },
               ]}
-              onPress={async () => {
-                await recordDose(medication.id, true, new Date().toISOString());
-                loadData();
-              }}
-            >
-              <Text style={styles.takeDoseText}>Take</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      );
+            />
+            <View style={styles.medicationInfo}>
+              <Text style={styles.medicationName}>
+                {medication.name} - Dose {index + 1}
+              </Text>
+              <Text style={styles.medicationDosage}>{medication.dosage}</Text>
+              <Text style={styles.medicationTime}>{time}</Text>
+            </View>
+            {doseIsTaken ? (
+              <View style={styles.takenBadge}>
+                <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
+                <Text style={styles.takenText}>Taken</Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={[
+                  styles.takeDoseButton,
+                  { backgroundColor: medication.color },
+                ]}
+                onPress={async () => {
+                  // Check if selected date is in the future
+                  const now = new Date();
+                  if (selectedDate > now) {
+                    Alert.alert(
+                      "Cannot Take Future Medication",
+                      "You cannot mark medications as taken for future dates.",
+                      [{ text: "OK" }]
+                    );
+                    return;
+                  }
+
+                  // Use the selected date but with the scheduled time
+                  const doseTime = new Date(selectedDate);
+                  const [hours, minutes] = time.split(":");
+                  doseTime.setHours(parseInt(hours, 10));
+                  doseTime.setMinutes(parseInt(minutes, 10));
+
+                  // Record the dose with specific time slot
+                  await recordDose(
+                    medication.id,
+                    true,
+                    doseTime.toISOString(),
+                    time
+                  );
+                  loadData();
+                }}
+              >
+                <Text style={styles.takeDoseText}>Take</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        );
+      });
     });
   };
 

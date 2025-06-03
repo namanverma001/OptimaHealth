@@ -21,6 +21,7 @@ import {
   getTodaysDoses,
   recordDose,
   DoseHistory,
+  getDoseHistory,
 } from "../utils/storage";
 import { useFocusEffect } from "@react-navigation/native";
 import {
@@ -40,6 +41,13 @@ const QUICK_ACTIONS = [
     route: "/medications/add" as const,
     color: "#FF6B6B",
     gradient: ["#FF8E8E", "#FF6B6B"] as [string, string],
+  },
+  {
+    icon: "document-text" as const,
+    label: "Prescriptions",
+    route: "/prescriptions" as const,
+    color: "#9B59B6",
+    gradient: ["#BB8FCE", "#9B59B6"] as [string, string],
   },
   {
     icon: "calendar" as const,
@@ -64,10 +72,17 @@ const QUICK_ACTIONS = [
   },
   {
     icon: "chatbubbles" as const,
-    label: "MedAssist",
+    label: "MedAssist Pro",
     route: "/chatbot" as const,
     color: "#BB8FCE",
     gradient: ["#CBA6E0", "#BB8FCE"] as [string, string],
+  },
+  {
+    icon: "cart" as const,
+    label: "Buy Medicines",
+    route: "/browser" as const,
+    color: "#4267B2",
+    gradient: ["#5C7CDC", "#4267B2"] as [string, string],
   },
 ];
 
@@ -143,6 +158,8 @@ export default function HomeScreen() {
   const [completedDoses, setCompletedDoses] = useState(0);
   const [doseHistory, setDoseHistory] = useState<DoseHistory[]>([]);
   const [progress, setProgress] = useState(0);
+  const [totalDosesCount, setTotalDosesCount] = useState(0);
+  const [completedDosesCount, setCompletedDosesCount] = useState(0);
 
   const handleLogout = () => {
     // Navigate to auth screen
@@ -181,31 +198,60 @@ export default function HomeScreen() {
 
       setTodaysMedications(todayMeds);
 
-      // Calculate total expected doses for today based on frequency
+      // Calculate total expected doses (exclude "As needed" medications)
       const totalExpectedDoses = todayMeds.reduce((total, med) => {
-        switch (med.frequency) {
-          case "Once daily":
-            return total + 1;
-          case "Twice daily":
-            return total + 2;
-          case "Three times daily":
-            return total + 3;
-          case "Four times daily":
-            return total + 4;
-          case "As needed":
-            return total + 0;
-          default:
-            return total + med.times.length;
-        }
+        if (med.frequency === "As needed") return total;
+        return total + med.times.length; // Count each time slot as a separate dose
       }, 0);
 
-      // Calculate completed doses
-      const completed = todaysDoses.filter((dose) => dose.taken).length;
-      setCompletedDoses(completed);
+      // Calculate completed doses for today only
+      const todayStr = new Date().toDateString();
 
-      // Update progress calculation based on actual total doses
-      const progress = totalExpectedDoses > 0 ? completed / totalExpectedDoses : 0;
-      setProgress(progress);
+      // Calculate actual doses taken by checking each medication and time slot individually
+      const actualDosesTaken = todayMeds.reduce((total, med) => {
+        if (med.frequency === "As needed") {
+          // For "as needed" medications, count actual doses taken but don't include in progress calculation
+          return total;
+        }
+
+        // For each scheduled medication, check each time slot
+        return total + med.times.reduce((medTotal, time) => {
+          // Count how many doses were taken for this specific time slot today
+          const dosesForThisTime = todaysDoses.filter(
+            dose =>
+              dose.medicationId === med.id &&
+              dose.taken &&
+              dose.scheduledTime === time &&
+              new Date(dose.timestamp).toDateString() === todayStr
+          );
+
+          // Only count 1 dose per time slot (even if multiple were recorded)
+          return medTotal + (dosesForThisTime.length > 0 ? 1 : 0);
+        }, 0);
+      }, 0);
+
+      // Update state with correct values
+      setCompletedDoses(actualDosesTaken);
+      setTotalDosesCount(totalExpectedDoses);
+      setCompletedDosesCount(actualDosesTaken);
+
+      // Calculate progress correctly
+      const calculatedProgress = totalExpectedDoses > 0
+        ? Math.min(actualDosesTaken / totalExpectedDoses, 1)
+        : 0;
+
+      setProgress(calculatedProgress);
+
+      console.log('Progress Debug:', {
+        totalExpectedDoses,
+        actualDosesTaken,
+        calculatedProgress: Math.round(calculatedProgress * 100) + '%',
+        medications: todayMeds.map(med => ({
+          name: med.name,
+          times: med.times,
+          frequency: med.frequency
+        }))
+      });
 
     } catch (error) {
       console.error("Error loading medications:", error);
@@ -230,6 +276,15 @@ export default function HomeScreen() {
     } catch (error) {
       console.error("Error setting up notifications:", error);
     }
+  };
+
+  // Calculate doses for a specific date
+  const getDosesForDate = async (date: Date): Promise<DoseHistory[]> => {
+    const history = await getDoseHistory();
+    const dateStr = date.toDateString();
+    return history.filter(
+      (dose) => new Date(dose.timestamp).toDateString() === dateStr
+    );
   };
 
   // Use useEffect for initial load
@@ -261,9 +316,10 @@ export default function HomeScreen() {
     }, [loadMedications])
   );
 
-  const handleTakeDose = async (medication: Medication) => {
+  const handleTakeDose = async (medication: Medication, time: string) => {
     try {
-      await recordDose(medication.id, true, new Date().toISOString());
+      // Record the dose with the specific time
+      await recordDose(medication.id, true, new Date().toISOString(), time);
       await loadMedications(); // Reload data after recording dose
     } catch (error) {
       console.error("Error recording dose:", error);
@@ -277,51 +333,33 @@ export default function HomeScreen() {
     );
   };
 
-  // Helper for pill icons row
-  const totalExpectedDoses = todaysMedications.reduce((total, med) => {
-    switch (med.frequency) {
-      case "Once daily":
-        return total + 1;
-      case "Twice daily":
-        return total + 2;
-      case "Three times daily":
-        return total + 3;
-      case "Four times daily":
-        return total + 4;
-      case "As needed":
-        return total + 0;
-      default:
-        return total + med.times.length;
-    }
-  }, 0);
-
   // Pills row: filled for completed, outline for remaining
   const renderPillIcons = () => {
     const maxDisplay = 8;
     const pills = [];
 
-    for (let i = 0; i < Math.min(totalExpectedDoses, maxDisplay); i++) {
+    for (let i = 0; i < Math.min(totalDosesCount, maxDisplay); i++) {
       pills.push(
         <View
           key={i}
           style={[
             styles.pillIcon,
-            { backgroundColor: i < completedDoses ? "#4ECDC4" : "#F0F4F8" }
+            { backgroundColor: i < completedDosesCount ? "#4ECDC4" : "#F0F4F8" }
           ]}
         >
           <Ionicons
             name="medical"
             size={16}
-            color={i < completedDoses ? "white" : "#BDC3C7"}
+            color={i < completedDosesCount ? "white" : "#BDC3C7"}
           />
         </View>
       );
     }
 
-    if (totalExpectedDoses > maxDisplay) {
+    if (totalDosesCount > maxDisplay) {
       pills.push(
         <View key="more" style={styles.morePills}>
-          <Text style={styles.morePillsText}>+{totalExpectedDoses - maxDisplay}</Text>
+          <Text style={styles.morePillsText}>+{totalDosesCount - maxDisplay}</Text>
         </View>
       );
     }
@@ -334,6 +372,111 @@ export default function HomeScreen() {
     if (hour < 12) return "Good Morning";
     if (hour < 17) return "Good Afternoon";
     return "Good Evening";
+  };
+
+  // Render medication cards for today's medications
+  const renderMedicationCards = () => {
+    return todaysMedications.flatMap((medication) => {
+      // Count how many doses of this medication were taken today
+      const dosesTakenToday = doseHistory.filter(
+        dose =>
+          dose.medicationId === medication.id &&
+          dose.taken &&
+          new Date(dose.timestamp).toDateString() === new Date().toDateString()
+      ).length;
+
+      if (medication.frequency === "As needed") {
+        // For 'as needed' medications, show just one card
+        return [(
+          <View key={`${medication.id}-asneeded`} style={styles.medicationCard}>
+            <View style={styles.medicationLeft}>
+              <View style={[styles.medicationIcon, { backgroundColor: `${medication.color}20` }]}>
+                <Ionicons name="medical" size={20} color={medication.color} />
+              </View>
+              <View style={styles.medicationInfo}>
+                <Text style={styles.medicationName}>{medication.name}</Text>
+                <Text style={styles.medicationDosage}>{medication.dosage}</Text>
+                <View style={styles.timeRow}>
+                  <Ionicons name="time-outline" size={14} color="#7F8C8D" />
+                  <Text style={styles.medicationTime}>As needed</Text>
+                </View>
+                <Text style={styles.medicationTime}>Times taken today: {dosesTakenToday}</Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={[styles.takeButton, { backgroundColor: medication.color }]}
+              onPress={() => handleTakeDose(medication, "as-needed")}
+            >
+              <Text style={styles.takeButtonText}>Take</Text>
+            </TouchableOpacity>
+          </View>
+        )];
+      }
+
+      // For scheduled medications, show a card for each dose time
+      return medication.times.map((time, index) => {
+        // Get all doses for this specific time slot
+        const dosesForThisTime = doseHistory.filter(
+          dose =>
+            dose.medicationId === medication.id &&
+            dose.taken &&
+            dose.scheduledTime === time &&
+            new Date(dose.timestamp).toDateString() === new Date().toDateString()
+        );
+
+        // Check if this specific dose time is taken
+        const doseIsTaken = dosesForThisTime.length > 0;
+
+        const doseNumber = index + 1;
+        const totalDoses = medication.times.length;
+        const isOverMedicated = dosesForThisTime.length > 1; // More than one dose taken at this time
+
+        return (
+          <View key={`${medication.id}-${time}`} style={styles.medicationCard}>
+            <View style={styles.medicationLeft}>
+              <View style={[styles.medicationIcon, { backgroundColor: `${medication.color}20` }]}>
+                <Ionicons
+                  name={doseIsTaken ? "checkmark-circle" : "medical"}
+                  size={20}
+                  color={doseIsTaken ? "#27AE60" : medication.color}
+                />
+              </View>
+              <View style={styles.medicationInfo}>
+                <Text style={styles.medicationName}>
+                  {medication.name}
+                </Text>
+                <Text style={styles.medicationDosage}>
+                  {medication.dosage} - Dose {doseNumber} of {totalDoses}
+                </Text>
+                <View style={styles.timeRow}>
+                  <Ionicons name="time-outline" size={14} color="#7F8C8D" />
+                  <Text style={styles.medicationTime}>{time}</Text>
+                </View>
+                {isOverMedicated && (
+                  <Text style={[styles.medicationDosage, { color: '#ff0000' }]}>
+                    Warning: Over-medication detected!
+                  </Text>
+                )}
+              </View>
+            </View>
+
+            {doseIsTaken ? (
+              <View style={styles.completedBadge}>
+                <Ionicons name="checkmark-circle" size={20} color="#27AE60" />
+                <Text style={styles.completedText}>Done</Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={[styles.takeButton, { backgroundColor: medication.color }]}
+                onPress={() => handleTakeDose(medication, time)}
+              >
+                <Text style={styles.takeButtonText}>Take</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        );
+      });
+    });
   };
 
   return (
@@ -373,20 +516,20 @@ export default function HomeScreen() {
           <View style={styles.progressHeader}>
             <Text style={styles.progressTitle}>Today's Progress</Text>
             <Text style={styles.progressSubtitle}>
-              {completedDoses} of {totalExpectedDoses} medications taken
+              {completedDosesCount} of {totalDosesCount} medications taken
             </Text>
           </View>
 
           <View style={styles.progressContent}>
             <CircularProgress
               progress={progress}
-              totalDoses={totalExpectedDoses}
-              completedDoses={completedDoses}
+              totalDoses={totalDosesCount}
+              completedDoses={completedDosesCount}
             />
             <View style={styles.progressStats}>
               {renderPillIcons()}
               <Text style={styles.statsText}>
-                {totalExpectedDoses > 0
+                {totalDosesCount > 0
                   ? `${Math.round(progress * 100)}% completed`
                   : "No medications today"}
               </Text>
@@ -437,40 +580,7 @@ export default function HomeScreen() {
               </Link>
             </View>
           ) : (
-            todaysMedications.map((medication, index) => {
-              const taken = isDoseTaken(medication.id);
-              return (
-                <View key={medication.id} style={styles.medicationCard}>
-                  <View style={styles.medicationLeft}>
-                    <View style={[styles.medicationIcon, { backgroundColor: `${medication.color}20` }]}>
-                      <Ionicons name="medical" size={20} color={medication.color} />
-                    </View>
-                    <View style={styles.medicationInfo}>
-                      <Text style={styles.medicationName}>{medication.name}</Text>
-                      <Text style={styles.medicationDosage}>{medication.dosage}</Text>
-                      <View style={styles.timeRow}>
-                        <Ionicons name="time-outline" size={14} color="#7F8C8D" />
-                        <Text style={styles.medicationTime}>{medication.times[0]}</Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {taken ? (
-                    <View style={styles.completedBadge}>
-                      <Ionicons name="checkmark-circle" size={20} color="#27AE60" />
-                      <Text style={styles.completedText}>Done</Text>
-                    </View>
-                  ) : (
-                    <TouchableOpacity
-                      style={[styles.takeButton, { backgroundColor: medication.color }]}
-                      onPress={() => handleTakeDose(medication)}
-                    >
-                      <Text style={styles.takeButtonText}>Take</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              );
-            })
+            renderMedicationCards()
           )}
         </View>
       </ScrollView>
@@ -495,18 +605,35 @@ export default function HomeScreen() {
             </View>
 
             <ScrollView style={styles.modalContent}>
-              {todaysMedications.map((medication) => (
-                <View key={medication.id} style={styles.notificationCard}>
-                  <View style={[styles.notificationIconContainer, { backgroundColor: medication.color }]}>
-                    <Ionicons name="medical" size={20} color="white" />
-                  </View>
-                  <View style={styles.notificationInfo}>
-                    <Text style={styles.notificationTitle}>{medication.name}</Text>
-                    <Text style={styles.notificationSubtitle}>{medication.dosage}</Text>
-                    <Text style={styles.notificationTime}>Scheduled: {medication.times[0]}</Text>
-                  </View>
-                </View>
-              ))}
+              {todaysMedications.flatMap((medication) => {
+                // Get all daily doses times based on frequency
+                const doseTimes = medication.frequency === "As needed" ? [] : medication.times;
+
+                // For each dose time, create a separate notification
+                return doseTimes.map((time, index) => {
+                  // Check if this specific dose is taken
+                  const doseIsTaken = doseHistory.some(
+                    dose =>
+                      dose.medicationId === medication.id &&
+                      dose.taken &&
+                      dose.scheduledTime === time &&
+                      new Date(dose.timestamp).toDateString() === new Date().toDateString()
+                  );
+
+                  return (
+                    <View key={`${medication.id}-${time}`} style={styles.notificationCard}>
+                      <View style={[styles.notificationIconContainer, { backgroundColor: medication.color }]}>
+                        <Ionicons name={doseIsTaken ? "checkmark-circle" : "medical"} size={20} color="white" />
+                      </View>
+                      <View style={styles.notificationInfo}>
+                        <Text style={styles.notificationTitle}>{medication.name} - Dose {index + 1}</Text>
+                        <Text style={styles.notificationSubtitle}>{medication.dosage}</Text>
+                        <Text style={styles.notificationTime}>Scheduled: {time}</Text>
+                      </View>
+                    </View>
+                  );
+                });
+              })}
             </ScrollView>
           </View>
         </View>

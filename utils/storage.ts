@@ -2,8 +2,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const MEDICATIONS_KEY = "@medications";
 const DOSE_HISTORY_KEY = "@dose_history";
+const PRESCRIPTIONS_KEY = "@prescriptions";
 
 export interface Medication {
+  frequency: any;
   id: string;
   name: string;
   dosage: string;
@@ -24,6 +26,15 @@ export interface DoseHistory {
   medicationId: string;
   timestamp: string;
   taken: boolean;
+  scheduledTime: string; // Time slot for this dose e.g. "09:00"
+}
+
+export interface Prescription {
+  id: string;
+  imageUri: string;
+  notes: string;
+  timestamp: string;
+  title: string;
 }
 
 export async function getMedications(): Promise<Medication[]> {
@@ -105,7 +116,8 @@ export async function getTodaysDoses(): Promise<DoseHistory[]> {
 export async function recordDose(
   medicationId: string,
   taken: boolean,
-  timestamp: string
+  timestamp: string,
+  scheduledTime: string
 ): Promise<void> {
   try {
     const history = await getDoseHistory();
@@ -114,6 +126,7 @@ export async function recordDose(
       medicationId,
       timestamp,
       taken,
+      scheduledTime
     };
 
     history.push(newDose);
@@ -139,6 +152,38 @@ export async function clearAllData(): Promise<void> {
     await AsyncStorage.multiRemove([MEDICATIONS_KEY, DOSE_HISTORY_KEY]);
   } catch (error) {
     console.error("Error clearing data:", error);
+    throw error;
+  }
+}
+
+export async function savePrescription(prescription: Prescription): Promise<void> {
+  try {
+    const prescriptions = await getPrescriptions();
+    prescriptions.push(prescription);
+    await AsyncStorage.setItem(PRESCRIPTIONS_KEY, JSON.stringify(prescriptions));
+  } catch (error) {
+    console.error("Error saving prescription:", error);
+    throw error;
+  }
+}
+
+export async function getPrescriptions(): Promise<Prescription[]> {
+  try {
+    const data = await AsyncStorage.getItem(PRESCRIPTIONS_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch (error) {
+    console.error("Error getting prescriptions:", error);
+    return [];
+  }
+}
+
+export async function deletePrescription(id: string): Promise<void> {
+  try {
+    const prescriptions = await getPrescriptions();
+    const updatedPrescriptions = prescriptions.filter((p) => p.id !== id);
+    await AsyncStorage.setItem(PRESCRIPTIONS_KEY, JSON.stringify(updatedPrescriptions));
+  } catch (error) {
+    console.error("Error deleting prescription:", error);
     throw error;
   }
 }

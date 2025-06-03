@@ -31,8 +31,10 @@
     "expo-clipboard": "~7.0.1",
     "expo-constants": "~17.0.8",
     "expo-crypto": "~14.0.2",
+    "expo-file-system": "^18.1.10",
     "expo-font": "~13.0.4",
     "expo-haptics": "~14.0.1",
+    "expo-image-picker": "^16.1.4",
     "expo-linear-gradient": "~14.0.2",
     "expo-linking": "~7.0.5",
     "expo-local-authentication": "~15.0.2",
@@ -59,7 +61,7 @@
     "react-native-screens": "~4.4.0",
     "react-native-svg": "15.8.0",
     "react-native-web": "~0.19.13",
-    "react-native-webview": "^13.12.5",
+    "react-native-webview": "^13.14.1",
     "viem": "^2.21.55"
   },
   "devDependencies": {

@@ -13,8 +13,8 @@ import {
 import axios from "axios";
 
 // Replace with your Gemini API provider's credentials
-const GEMINI_API_KEY = "YOUR API KEY"; // Replace with your actual Gemini API key
-const GEMINI_API_URL = "URL ENDPOINT"; // Replace with the correct endpoint
+const GEMINI_API_KEY = "AIzaSyAhEEMH1-OtYB8eYkvM4WlKskUjFKvtJhk"; // Replace with your actual Gemini API key
+const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"; // Replace with the correct endpoint
 
 export default function ChatbotScreen() {
     const [messages, setMessages] = useState<{ text: string; sender: "user" | "bot" }[]>([
@@ -52,21 +52,19 @@ export default function ChatbotScreen() {
 
         setConversationHistory(updatedHistory);
 
-        try {
-            // Construct the prompt with instructions for the medical focus
-            const medicalPreamble = `You are MedAssist, a medical AI assistant that provides helpful, accurate, and ethical medical information. You clearly state you're not a replacement for professional medical advice. You ask clarifying questions if symptoms or concerns aren't clear. You focus exclusively on health and medical topics and politely redirect non-medical questions to health topics instead. You respond in a compassionate manner appropriate for medical discussions. Keep responses concise.
+        try {            // Add context by prepending it to the user's message
+            const medicalPreamble = `You are MedAssist, a medical AI assistant that provides helpful, accurate, and ethical medical information. You clearly state you're not a replacement for professional medical advice. You ask clarifying questions if symptoms or concerns aren't clear. You focus exclusively on health and medical topics and politely redirect non-medical questions to health topics instead. You respond in a compassionate manner appropriate for medical discussions. Keep responses concise.\n\nUser query: `;
 
-Now, respond to this medical query: ${input}`;
-
-            const response = await axios.post(
+            // Prepare the conversation without system role
+            const modifiedHistory = updatedHistory.map(msg => ({
+                role: msg.role === "system" ? "user" : msg.role,
+                parts: msg.role === "user" && updatedHistory.indexOf(msg) === updatedHistory.length - 1
+                    ? [{ text: medicalPreamble + msg.parts[0].text }]
+                    : msg.parts
+            })); const response = await axios.post(
                 `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`,
                 {
-                    contents: [
-                        {
-                            role: "user",
-                            parts: [{ text: medicalPreamble }]
-                        }
-                    ],
+                    contents: modifiedHistory,
                     generationConfig: {
                         temperature: 0.2,
                         topP: 0.8,
@@ -87,7 +85,7 @@ Now, respond to this medical query: ${input}`;
             const botMessage: { text: string; sender: "user" | "bot" } = { text: botReply, sender: "bot" };
             setMessages((prev) => [...prev, botMessage]);
 
-            // For history, we add just the model's response without our preamble instructions
+            // For history, we add just the model's response
             setConversationHistory([
                 ...updatedHistory,
                 {
@@ -96,7 +94,11 @@ Now, respond to this medical query: ${input}`;
                 }
             ]);
         } catch (error) {
-            console.error("Error communicating with Gemini API:", error.response?.data || error.message);
+            if (axios.isAxiosError(error)) {
+                console.error("Error communicating with Gemini API:", error.response?.data || error.message);
+            } else {
+                console.error("Error communicating with Gemini API:", (error as Error).message || error);
+            }
             const errorMessage: { text: string; sender: "user" | "bot" } = {
                 text: "I'm having trouble connecting to my medical database. Please try again with your health question.",
                 sender: "bot"
@@ -146,7 +148,7 @@ Now, respond to this medical query: ${input}`;
                 ))}
                 {isLoading && (
                     <View style={styles.loadingContainer}>
-                        <ActivityIndicator size="small" color="#4CAF50" />
+                        <ActivityIndicator size="small" color="#1976D2" />
                         <Text style={styles.loadingText}>Consulting medical knowledge...</Text>
                     </View>
                 )}
@@ -186,7 +188,7 @@ const styles = StyleSheet.create({
     header: {
         paddingTop: 50,
         paddingBottom: 15,
-        backgroundColor: "#4CAF50",
+        backgroundColor: "#1976D2", // blue
         alignItems: "center",
         justifyContent: "center",
         shadowColor: "#000",
@@ -204,13 +206,13 @@ const styles = StyleSheet.create({
         letterSpacing: 1,
     },
     subHeaderText: {
-        color: "#e0f2e0",
+        color: "#BBDEFB", // light blue
         fontSize: 14,
         marginTop: 2,
     },
     chatContainer: {
         padding: 16,
-        paddingBottom: 100, // Extra padding at bottom to account for input and disclaimer
+        paddingBottom: 100,
     },
     message: {
         padding: 12,
@@ -225,13 +227,13 @@ const styles = StyleSheet.create({
     },
     userMessage: {
         alignSelf: "flex-end",
-        backgroundColor: "#4CAF50",
+        backgroundColor: "#1976D2", // blue
     },
     botMessage: {
         alignSelf: "flex-start",
         backgroundColor: "#ffffff",
         borderWidth: 1,
-        borderColor: "#e0f2e0",
+        borderColor: "#E3F2FD", // light blue
     },
     messageText: {
         fontSize: 16,
@@ -266,7 +268,7 @@ const styles = StyleSheet.create({
         borderColor: "#e0e0e0",
         backgroundColor: "#fff",
         position: "absolute",
-        bottom: 30, // Adjusted to make room for disclaimer
+        bottom: 30,
         width: "100%",
     },
     input: {
@@ -276,11 +278,11 @@ const styles = StyleSheet.create({
         paddingVertical: 12,
         paddingHorizontal: 18,
         fontSize: 16,
-        maxHeight: 100, // Limit height for multiline
+        maxHeight: 100,
     },
     sendButton: {
         marginLeft: 10,
-        backgroundColor: "#4CAF50",
+        backgroundColor: "#1976D2", // blue
         borderRadius: 25,
         padding: 14,
         alignItems: "center",
@@ -292,7 +294,7 @@ const styles = StyleSheet.create({
     },
     disclaimerContainer: {
         padding: 8,
-        backgroundColor: "#f0f7f0",
+        backgroundColor: "#E3F2FD", // light blue
         position: "absolute",
         bottom: 0,
         width: "100%",
